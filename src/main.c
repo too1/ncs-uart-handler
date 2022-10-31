@@ -96,14 +96,21 @@ void app_uart_async_callback(const struct device *uart_dev,
 
 static void app_uart_init(void)
 {
+	int ret;
 	dev_uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
-	if(device_is_ready(dev_uart) != 0) {
+	if(!device_is_ready(dev_uart)) {
 		printk("UART device not ready!\n");
 		return;
 	}
 
-	uart_callback_set(dev_uart, app_uart_async_callback, NULL);
-	uart_rx_enable(dev_uart, uart_double_buffer[0], UART_BUF_SIZE, UART_RX_TIMEOUT_MS);
+	ret = uart_callback_set(dev_uart, app_uart_async_callback, NULL);
+	if(ret) {
+		printk("Uart callback set error: %d\n", ret);
+	}
+	ret = uart_rx_enable(dev_uart, uart_double_buffer[0], UART_BUF_SIZE, UART_RX_TIMEOUT_MS);
+	if(ret) {
+		printk("UART rx enable error: %d\n", ret);
+	}
 }
 
 // Function to send UART data, by writing it to a ring buffer (FIFO) in the application
