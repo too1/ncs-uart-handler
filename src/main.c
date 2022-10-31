@@ -21,18 +21,15 @@ void main(void)
 	const uint8_t test_string[] = "Hello world through the UART async driver\r\n";
 	app_uart_send(test_string, strlen(test_string));
 
-	struct uart_msg_queue_item incoming_message;
-
 	while (1) {
-		#if 0
-		// This function will not return until a new message is ready
-		k_msgq_get(&uart_rx_msgq, &incoming_message, K_FOREVER);
-
-		// Process the message here.
-		static uint8_t string_buffer[UART_BUF_SIZE + 1];
-		memcpy(string_buffer, incoming_message.bytes, incoming_message.length);
-		string_buffer[incoming_message.length] = 0;
-		printk("RX %i: %s\n", incoming_message.length, string_buffer);
-		#endif
+		uint8_t *uart_rx_data;
+		uint32_t uart_rx_length;
+		if(app_uart_rx(&uart_rx_data, &uart_rx_length, K_FOREVER) == 0) {
+			// Process the message here.
+			static uint8_t string_buffer[UART_BUF_SIZE + 1];
+			memcpy(string_buffer, uart_rx_data, uart_rx_length);
+			string_buffer[uart_rx_length] = 0;
+			printk("RX %i: %s\n", uart_rx_length, string_buffer);
+		} 
 	}
 }

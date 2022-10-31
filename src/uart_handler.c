@@ -117,3 +117,24 @@ int app_uart_send(const uint8_t * data_ptr, uint32_t data_len)
 
 	return 0;
 }
+
+int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
+{
+	int ret;
+	struct uart_msg_queue_item incoming_message;
+
+	// Check for a new message in the buffer
+	ret = k_msgq_get(&uart_rx_msgq, &incoming_message, timeout);
+
+	if(ret != 0) return ret;
+
+	*data_ptr = incoming_message.bytes;
+	*data_len = incoming_message.length;
+
+	return 0;
+}
+
+int app_uart_rx_free(uint32_t bytes)
+{
+	return 0;
+}
