@@ -96,9 +96,9 @@ void app_uart_async_callback(const struct device *uart_dev,
 
 static void app_uart_init(void)
 {
-	dev_uart = device_get_binding("UART_0");
-	if (dev_uart == NULL) {
-		printk("Failed to get UART binding\n");
+	dev_uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
+	if(device_is_ready(dev_uart) != 0) {
+		printk("UART device not ready!\n");
 		return;
 	}
 
