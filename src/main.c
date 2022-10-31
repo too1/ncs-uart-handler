@@ -26,10 +26,11 @@ void main(void)
 		uint32_t uart_rx_length;
 		if(app_uart_rx(&uart_rx_data, &uart_rx_length, K_FOREVER) == 0) {
 			// Process the message here.
-			static uint8_t string_buffer[UART_BUF_SIZE + 1];
+			static uint8_t string_buffer[64];
 			memcpy(string_buffer, uart_rx_data, uart_rx_length);
 			string_buffer[uart_rx_length] = 0;
 			printk("RX %i: %s\n", uart_rx_length, string_buffer);
 		} 
+		k_msleep(2000);
 	}
 }
