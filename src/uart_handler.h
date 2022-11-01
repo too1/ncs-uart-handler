@@ -17,8 +17,10 @@ struct uart_msg_queue_item {
 
 void app_uart_init(void);
 
-int app_uart_send(const uint8_t * data_ptr, uint32_t data_len);
+int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeout);
 
 int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout);
+
+int app_uart_rx_free(uint32_t bytes);
 
 #endif

@@ -21,7 +21,7 @@ K_MSGQ_DEFINE(uart_rx_msgq, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEU
 
 // UART RX free bytes
 static uint32_t free_rx_bytes = UART_RX_BUF_SIZE;
-static bool rx_enable_request_pending = false;
+static bool rx_enable_request = false;
 
 static const struct device *dev_uart;
 
@@ -65,7 +65,6 @@ void app_uart_async_callback(const struct device *uart_dev,
 		
 		case UART_RX_BUF_REQUEST:
 			if(free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
-				//printk("req ok %x\n", (uint32_t)UART_RX_NEXT_BUF);
 				uart_rx_buf_rsp(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE);
 				free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
 				UART_RX_BUF_INC();
@@ -78,7 +77,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 			break;
 		case UART_RX_DISABLED:
 			if(free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
-				printk("Enable again %x\n", (uint32_t)UART_RX_NEXT_BUF);
+				printk("RX disabled. Re-enabling.\n");
 				int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
 				if(ret) {
 					printk("UART rx enable error in disable callback: %d\n", ret);
@@ -87,8 +86,8 @@ void app_uart_async_callback(const struct device *uart_dev,
 				UART_RX_BUF_INC();
 				free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
 			} else {
-				// In the case we don't have buffers available to immediately re-enable RX, wait for more data to be read by the user
-				rx_enable_request_pending = true;
+				printk("RX dis, buf full. Set flag\n");
+				rx_enable_request = true;
 			}
 			break;
 		
@@ -100,7 +99,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 void app_uart_init(void)
 {
 	int ret;
-	dev_uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
+	dev_uart = DEVICE_DT_GET(DT_NODELABEL(my_uart));
 	if(!device_is_ready(dev_uart)) {
 		printk("UART device not ready!\n");
 		return;
@@ -116,14 +115,12 @@ void app_uart_init(void)
 		printk("UART rx enable error: %d\n", ret);
 		return;
 	}
-	//UART_RX_BUF_INC();
 	free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
-	printk("enabled here\n");
 }
 
 // Function to send UART data, by writing it to a ring buffer (FIFO) in the application
 // WARNING: This function is not thread safe! If you want to call this function from multiple threads a semaphore should be used
-int app_uart_send(const uint8_t * data_ptr, uint32_t data_len)
+int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeout)
 {
 	while(1) {
 		// Try to move the data into the TX ring buffer
@@ -137,6 +134,9 @@ int app_uart_send(const uint8_t * data_ptr, uint32_t data_len)
 		
 		// In case all the data was written, exit the loop
 		if(data_len == 0) break;
+
+		// If timeout if 0, exit immediately
+		if(timeout.ticks == 0) break;
 
 		// In case some data is still to be written, sleep for some time and run the loop one more time
 		k_msleep(10);
@@ -153,28 +153,28 @@ int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
 
 	// Check for a new message in the buffer
 	ret = k_msgq_get(&uart_rx_msgq, &incoming_message, timeout);
-
 	if(ret != 0) return ret;
 
 	*data_ptr = incoming_message.bytes;
 	*data_len = incoming_message.length;
-
-	free_rx_bytes += incoming_message.length;
-
-	if(rx_enable_request_pending && free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
-		int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
-		if(ret) {
-			printk("UART rx enable error in disable callback: %d\n", ret);
-			return 0;
-		}
-		UART_RX_BUF_INC();
-		free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
-	}
 
 	return 0;
 }
 
 int app_uart_rx_free(uint32_t bytes)
 {
+	free_rx_bytes += bytes;
+
+	if(rx_enable_request && free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
+		rx_enable_request = false;
+		printk("Buffers freed. Re-en RX\n");
+		free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
+		int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
+		if(ret) {
+			printk("UART rx enable error in app_uart_rx(): %d\n", ret);
+			return ret;
+		}
+		UART_RX_BUF_INC();
+	}
 	return 0;
 }
