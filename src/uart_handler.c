@@ -12,7 +12,7 @@ volatile int bytes_claimed;
 // UART RX primary buffers
 #define UART_RX_DBL_BUF_SIZE (UART_RX_BUF_SIZE / 4)
 uint8_t uart_rx_buffer[4][UART_RX_DBL_BUF_SIZE];
-uint32_t uart_rx_buf_index = 1;
+uint32_t uart_rx_buf_index = 0;
 #define UART_RX_NEXT_BUF &uart_rx_buffer[uart_rx_buf_index][0]
 #define UART_RX_BUF_INC() uart_rx_buf_index = (uart_rx_buf_index + 1) % 4
 
@@ -22,6 +22,7 @@ K_MSGQ_DEFINE(uart_rx_msgq, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEU
 // UART RX free bytes
 static uint32_t free_rx_bytes = UART_RX_BUF_SIZE;
 static bool rx_enable_request = false;
+static bool rx_received_since_enable = false;
 
 static const struct device *dev_uart;
 
@@ -56,6 +57,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 			break;
 		
 		case UART_RX_RDY:
+			rx_received_since_enable = true;
 			new_message.bytes = evt->data.rx.buf + evt->data.rx.offset;
 			new_message.length = evt->data.rx.len;
 			if(k_msgq_put(&uart_rx_msgq, &new_message, K_NO_WAIT) != 0){
@@ -65,9 +67,9 @@ void app_uart_async_callback(const struct device *uart_dev,
 		
 		case UART_RX_BUF_REQUEST:
 			if(free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
+				UART_RX_BUF_INC();
 				uart_rx_buf_rsp(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE);
 				free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
-				UART_RX_BUF_INC();
 			}
 			break;
 
@@ -80,27 +82,30 @@ void app_uart_async_callback(const struct device *uart_dev,
 				int used = k_msgq_num_used_get(&uart_rx_msgq);
 				if(used > 0) {
 					printk("RX DIS. Re-enabling.\n");
-					free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
+					if(rx_received_since_enable) {
+						free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
+						UART_RX_BUF_INC();
+					}
 					int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
 					if(ret) {
 						printk("UART rx enable error in disable callback: %d\n", ret);
 						return;
 					}
-					UART_RX_BUF_INC();
 				} else {
 					printk("RX DIS. Empty bufs Re-enabling.\n");
 					free_rx_bytes = UART_RX_BUF_SIZE - UART_RX_DBL_BUF_SIZE;
+					UART_RX_BUF_INC();
 					int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
 					if(ret) {
 						printk("UART rx enable error in disable callback: %d\n", ret);
 						return;
 					}
-					UART_RX_BUF_INC();
 				}
 			} else {
 				printk("RX dis, buf full. Set flag\n");
 				rx_enable_request = true;
 			}
+			rx_received_since_enable = false;
 			break;
 		
 		default:
@@ -181,12 +186,12 @@ int app_uart_rx_free(uint32_t bytes)
 		rx_enable_request = false;
 		printk("Buffers freed. Re-en RX\n");
 		free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
+		UART_RX_BUF_INC();
 		int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
 		if(ret) {
 			printk("UART rx enable error in app_uart_rx(): %d\n", ret);
 			return ret;
 		}
-		UART_RX_BUF_INC();
 	}
 	return 0;
 }
