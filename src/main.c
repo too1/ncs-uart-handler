@@ -12,19 +12,17 @@
 #include <uart_handler.h>
 #include <string.h>
 
+#define TEST_LENGTH 1024
+
 void main(void)
 {
 	printk("UART Async example started\n");
 	
 	app_uart_init();
 
-	const uint8_t test_string[] = "Hello world through the UART async driver\r\n";
-	app_uart_send(test_string, strlen(test_string), K_NO_WAIT);
-
 	int counter = 0;
-	int test_length = 512;
-	uint8_t test_buf[512];
-	for(int i = 0; i < 512; i++) test_buf[i] = (i / 4);
+	static uint8_t test_buf[TEST_LENGTH];
+	for(int i = 0; i < TEST_LENGTH; i++) test_buf[i] = (i / 4);
 
 	while (1) {
 		uint8_t *uart_rx_data;
@@ -40,7 +38,7 @@ void main(void)
 		} 
 		if(counter++ > 100) {
 			counter = 0;
-			app_uart_send(test_buf, test_length, K_MSEC(100));
+			app_uart_send(test_buf, TEST_LENGTH, K_MSEC(100));
 		}
 	}
 }

@@ -94,7 +94,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 				} else {
 					printk("RX DIS. Empty bufs Re-enabling.\n");
 					free_rx_bytes = UART_RX_BUF_SIZE - UART_RX_DBL_BUF_SIZE;
-					UART_RX_BUF_INC();
+					uart_rx_buf_index = 0;
 					int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
 					if(ret) {
 						printk("UART rx enable error in disable callback: %d\n", ret);
@@ -127,7 +127,7 @@ void app_uart_init(void)
 		printk("Uart callback set error: %d\n", ret);
 		return;
 	}
-	ret = uart_rx_enable(dev_uart, &uart_rx_buffer[0][0], UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
+	ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
 	if(ret) {
 		printk("UART rx enable error: %d\n", ret);
 		return;
