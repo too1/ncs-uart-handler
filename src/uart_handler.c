@@ -10,17 +10,14 @@ RING_BUF_DECLARE(app_tx_fifo, UART_TX_BUF_SIZE);
 volatile int bytes_claimed;
 
 // UART RX primary buffers
-#define UART_RX_DBL_BUF_SIZE (UART_RX_BUF_SIZE / 4)
-uint8_t uart_rx_buffer[4][UART_RX_DBL_BUF_SIZE];
-uint32_t uart_rx_buf_index = 0;
-#define UART_RX_NEXT_BUF &uart_rx_buffer[uart_rx_buf_index][0]
-#define UART_RX_BUF_INC() uart_rx_buf_index = (uart_rx_buf_index + 1) % 4
+#define UART_RX_SLAB_SIZE (UART_RX_BUF_SIZE / 4)
+K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 
 // UART RX message queue
 K_MSGQ_DEFINE(uart_rx_msgq, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEUE_SIZE, 4);
+volatile int allocated_slabs = 0;
 
 // UART RX free bytes
-static uint32_t free_rx_bytes = UART_RX_BUF_SIZE;
 static bool rx_enable_request = false;
 static bool rx_received_since_enable = false;
 
@@ -43,6 +40,9 @@ void app_uart_async_callback(const struct device *uart_dev,
 							 struct uart_event *evt, void *user_data)
 {
 	static struct uart_msg_queue_item new_message;
+	static char *new_rx_buf;
+	int used;
+	int ret;
 
 	switch (evt->type) {
 		case UART_TX_DONE:
@@ -57,52 +57,44 @@ void app_uart_async_callback(const struct device *uart_dev,
 			break;
 		
 		case UART_RX_RDY:
+			//printk("rdy (%i)\n", evt->data.rx.len);
 			rx_received_since_enable = true;
 			new_message.bytes = evt->data.rx.buf + evt->data.rx.offset;
 			new_message.length = evt->data.rx.len;
+			new_message._source_buf = evt->data.rx.buf;
 			if(k_msgq_put(&uart_rx_msgq, &new_message, K_NO_WAIT) != 0){
 				printk("Error: Uart RX message queue full!\n");
 			}
 			break;
 		
 		case UART_RX_BUF_REQUEST:
-			if(free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
-				UART_RX_BUF_INC();
-				uart_rx_buf_rsp(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE);
-				free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
+			if(k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT) == 0) {
+				allocated_slabs++;
+				printk("Alloc (%i)\n", allocated_slabs);
+				uart_rx_buf_rsp(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE);
 			}
 			break;
 
 		case UART_RX_BUF_RELEASED:
 			break;
+
 		case UART_RX_STOPPED:
+			printk("stop %i\n", evt->data.rx_stop.reason);
 			break;
+
 		case UART_RX_DISABLED:
-			if(free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
-				int used = k_msgq_num_used_get(&uart_rx_msgq);
-				if(used > 0) {
-					printk("RX DIS. Re-enabling.\n");
-					if(rx_received_since_enable) {
-						free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
-						UART_RX_BUF_INC();
-					}
-					int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
-					if(ret) {
-						printk("UART rx enable error in disable callback: %d\n", ret);
-						return;
-					}
-				} else {
-					printk("RX DIS. Empty bufs Re-enabling.\n");
-					free_rx_bytes = UART_RX_BUF_SIZE - UART_RX_DBL_BUF_SIZE;
-					uart_rx_buf_index = 0;
-					int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
-					if(ret) {
-						printk("UART rx enable error in disable callback: %d\n", ret);
-						return;
-					}
+			//printk("dis\n");
+			if((ret = k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT)) == 0) {
+				//uart_rx_buf_rsp(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE);
+				allocated_slabs++;
+				printk("RX DIS. Re-enabling (%i)\n", allocated_slabs);
+				int ret = uart_rx_enable(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
+				if(ret) {
+					printk("UART rx enable error in disable callback: %d\n", ret);
+					return;
 				}
 			} else {
-				printk("RX dis, buf full. Set flag\n");
+				printk("RX dis, buf full. Set flag %i\n", ret);
 				rx_enable_request = true;
 			}
 			rx_received_since_enable = false;
@@ -127,12 +119,16 @@ void app_uart_init(void)
 		printk("Uart callback set error: %d\n", ret);
 		return;
 	}
-	ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
-	if(ret) {
-		printk("UART rx enable error: %d\n", ret);
-		return;
+
+	char *rx_buf_ptr;
+	if (k_mem_slab_alloc(&memslab_uart_rx, (void**)&rx_buf_ptr, K_NO_WAIT) == 0) {
+		allocated_slabs++;
+		ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
+		if(ret) {
+			printk("UART rx enable error: %d\n", ret);
+			return;
+		}
 	}
-	free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
 }
 
 // Function to send UART data, by writing it to a ring buffer (FIFO) in the application
@@ -163,10 +159,11 @@ int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeo
 	return 0;
 }
 
+char *last_read_buffer = 0;
 int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
 {
 	int ret;
-	struct uart_msg_queue_item incoming_message;
+	static struct uart_msg_queue_item incoming_message;
 
 	// Check for a new message in the buffer
 	ret = k_msgq_get(&uart_rx_msgq, &incoming_message, timeout);
@@ -174,24 +171,37 @@ int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
 
 	*data_ptr = incoming_message.bytes;
 	*data_len = incoming_message.length;
+	last_read_buffer = incoming_message._source_buf;
 
 	return 0;
 }
 
-int app_uart_rx_free(uint32_t bytes)
+char *last_freed_buffer = 0;
+int app_uart_rx_free(void)
 {
-	free_rx_bytes += bytes;
+	int ret;
 
-	if(rx_enable_request && free_rx_bytes >= UART_RX_DBL_BUF_SIZE) {
-		rx_enable_request = false;
-		printk("Buffers freed. Re-en RX\n");
-		free_rx_bytes -= UART_RX_DBL_BUF_SIZE;
-		UART_RX_BUF_INC();
-		int ret = uart_rx_enable(dev_uart, UART_RX_NEXT_BUF, UART_RX_DBL_BUF_SIZE, UART_RX_TIMEOUT_US);
-		if(ret) {
-			printk("UART rx enable error in app_uart_rx(): %d\n", ret);
-			return ret;
+	// Remove the last message in the buffer
+	if(last_freed_buffer != 0 && last_freed_buffer != last_read_buffer){
+		k_mem_slab_free(&memslab_uart_rx, (void**)&last_freed_buffer);
+		allocated_slabs--;
+		printk("dealloc (%i)\n", allocated_slabs);
+
+		if(rx_enable_request) {
+			rx_enable_request = false;
+			printk("Buffers freed. Re-en RX\n");
+			char *rx_buf_ptr;
+			if (k_mem_slab_alloc(&memslab_uart_rx, (void**)&rx_buf_ptr, K_NO_WAIT) == 0) {
+				ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
+				if(ret) {
+					printk("UART rx enable error: %d\n", ret);
+					return -1;
+				}
+				allocated_slabs++;
+			} else printk("Memslab alloc failed!!!\n");
 		}
 	}
+	last_freed_buffer = last_read_buffer;
+
 	return 0;
 }

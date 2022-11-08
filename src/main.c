@@ -12,7 +12,10 @@
 #include <uart_handler.h>
 #include <string.h>
 
-#define TEST_LENGTH 1024
+#define TEST_LENGTH 10
+static uint8_t test_buf[TEST_LENGTH];
+
+static volatile bool start_sleep_period = false;
 
 void main(void)
 {
@@ -21,24 +24,42 @@ void main(void)
 	app_uart_init();
 
 	int counter = 0;
-	static uint8_t test_buf[TEST_LENGTH];
-	for(int i = 0; i < TEST_LENGTH; i++) test_buf[i] = (i / 4);
 
 	while (1) {
 		uint8_t *uart_rx_data;
 		uint32_t uart_rx_length;
 		if(app_uart_rx(&uart_rx_data, &uart_rx_length, K_MSEC(100)) == 0) {
 			// Process the message here.
-			static uint8_t string_buffer[65];
-			memcpy(string_buffer, uart_rx_data, uart_rx_length);
-			string_buffer[uart_rx_length] = 0;
-			printk("RX %i: %.2x-%.2x-%.2x-%.2x\n", uart_rx_length, uart_rx_data[0], uart_rx_data[1], uart_rx_data[2], uart_rx_data[3]);
-			app_uart_rx_free(uart_rx_length);
-			k_msleep(100);
+			printk("RX %.8x ", (uint32_t)uart_rx_data);
+			for(int i = 0; i < uart_rx_length; i++) printk("%.i ", uart_rx_data[i]);
+			printk("\n");
+			app_uart_rx_free();
+			//k_msleep(100);
 		} 
-		if(counter++ > 100) {
-			counter = 0;
-			app_uart_send(test_buf, TEST_LENGTH, K_MSEC(100));
+		if(start_sleep_period) {
+			start_sleep_period = false;
+			printk("Sleep start\n");
+			k_msleep(8000);
+			printk("Sleep end\n");
 		}
 	}
 }
+
+static void thread_test_uart_tx(void)
+{
+	int sleep_time = 250;
+	int runtime = 0;
+	static uint8_t cnt = 0;
+	while(1) {
+		for(int i = 0; i < TEST_LENGTH; i++) test_buf[i] = cnt++;
+		app_uart_send(test_buf, TEST_LENGTH, K_NO_WAIT);
+		k_msleep(sleep_time);
+		runtime += sleep_time;
+		if(runtime > 20000) {
+			start_sleep_period = true;
+			runtime = 0;
+		}
+	}
+} 
+
+K_THREAD_DEFINE(thread_tx, 512, thread_test_uart_tx, 0, 0, 0, 5, 0, 0);  
