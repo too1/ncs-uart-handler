@@ -1,6 +1,5 @@
 #include "uart_handler.h"
 #include <sys/ring_buffer.h>
-#include <drivers/uart.h>
 #include <string.h>
 
 K_SEM_DEFINE(tx_done, 1, 1);
@@ -16,10 +15,13 @@ K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 // UART RX message queue
 K_MSGQ_DEFINE(uart_rx_msgq, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEUE_SIZE, 4);
 volatile int allocated_slabs = 0;
+static bool uart_event_queue_overflow = false;
 
 // UART RX free bytes
 static bool rx_enable_request = false;
 static bool rx_received_since_enable = false;
+
+static app_uart_event_handler_t app_uart_event_handler;
 
 static const struct device *dev_uart;
 
@@ -36,12 +38,19 @@ static int uart_tx_get_from_queue(void)
 	return bytes_claimed;
 }
 
+static inline void uart_push_event(struct uart_msg_queue_item *event)
+{
+	if(k_msgq_put(&uart_rx_msgq, event, K_NO_WAIT) != 0){
+		printk("Error: Uart event queue full!\n");
+		uart_event_queue_overflow = true;
+	}
+}
+
 void app_uart_async_callback(const struct device *uart_dev,
 							 struct uart_event *evt, void *user_data)
 {
 	static struct uart_msg_queue_item new_message;
 	static char *new_rx_buf;
-	int used;
 	int ret;
 
 	switch (evt->type) {
@@ -59,18 +68,17 @@ void app_uart_async_callback(const struct device *uart_dev,
 		case UART_RX_RDY:
 			//printk("rdy (%i)\n", evt->data.rx.len);
 			rx_received_since_enable = true;
-			new_message.bytes = evt->data.rx.buf + evt->data.rx.offset;
-			new_message.length = evt->data.rx.len;
-			new_message._source_buf = evt->data.rx.buf;
-			if(k_msgq_put(&uart_rx_msgq, &new_message, K_NO_WAIT) != 0){
-				printk("Error: Uart RX message queue full!\n");
-			}
+			new_message.type = APP_UART_EVT_RX;
+			new_message.data.rx.bytes = evt->data.rx.buf + evt->data.rx.offset;
+			new_message.data.rx.length = evt->data.rx.len;
+			new_message.data.rx._source_buf = evt->data.rx.buf;
+			uart_push_event(&new_message);
 			break;
 		
 		case UART_RX_BUF_REQUEST:
 			if(k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT) == 0) {
 				allocated_slabs++;
-				printk("Alloc (%i)\n", allocated_slabs);
+				//printk("Alloc (%i)\n", allocated_slabs);
 				uart_rx_buf_rsp(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE);
 			}
 			break;
@@ -79,7 +87,9 @@ void app_uart_async_callback(const struct device *uart_dev,
 			break;
 
 		case UART_RX_STOPPED:
-			printk("stop %i\n", evt->data.rx_stop.reason);
+			new_message.type = APP_UART_EVT_ERROR;
+			new_message.data.error.reason = evt->data.rx_stop.reason;
+			uart_push_event(&new_message);
 			break;
 
 		case UART_RX_DISABLED:
@@ -87,14 +97,14 @@ void app_uart_async_callback(const struct device *uart_dev,
 			if((ret = k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT)) == 0) {
 				//uart_rx_buf_rsp(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE);
 				allocated_slabs++;
-				printk("RX DIS. Re-enabling (%i)\n", allocated_slabs);
+				//printk("RX DIS. Re-enabling (%i)\n", allocated_slabs);
 				int ret = uart_rx_enable(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
 				if(ret) {
 					printk("UART rx enable error in disable callback: %d\n", ret);
 					return;
 				}
 			} else {
-				printk("RX dis, buf full. Set flag %i\n", ret);
+				//printk("RX dis, buf full. Set flag %i\n", ret);
 				rx_enable_request = true;
 			}
 			rx_received_since_enable = false;
@@ -105,7 +115,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 	}
 }
 
-void app_uart_init(void)
+void app_uart_init(app_uart_event_handler_t evt_handler)
 {
 	int ret;
 	dev_uart = DEVICE_DT_GET(DT_NODELABEL(my_uart));
@@ -113,6 +123,8 @@ void app_uart_init(void)
 		printk("UART device not ready!\n");
 		return;
 	}
+
+	app_uart_event_handler = evt_handler;
 
 	ret = uart_callback_set(dev_uart, app_uart_async_callback, NULL);
 	if(ret) {
@@ -169,9 +181,9 @@ int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
 	ret = k_msgq_get(&uart_rx_msgq, &incoming_message, timeout);
 	if(ret != 0) return ret;
 
-	*data_ptr = incoming_message.bytes;
-	*data_len = incoming_message.length;
-	last_read_buffer = incoming_message._source_buf;
+	*data_ptr = incoming_message.data.rx.bytes;
+	*data_len = incoming_message.data.rx.length;
+	last_read_buffer = incoming_message.data.rx._source_buf;
 
 	return 0;
 }
@@ -185,11 +197,11 @@ int app_uart_rx_free(void)
 	if(last_freed_buffer != 0 && last_freed_buffer != last_read_buffer){
 		k_mem_slab_free(&memslab_uart_rx, (void**)&last_freed_buffer);
 		allocated_slabs--;
-		printk("dealloc (%i)\n", allocated_slabs);
+		//printk("dealloc (%i)\n", allocated_slabs);
 
 		if(rx_enable_request) {
 			rx_enable_request = false;
-			printk("Buffers freed. Re-en RX\n");
+			//printk("Buffers freed. Re-en RX\n");
 			char *rx_buf_ptr;
 			if (k_mem_slab_alloc(&memslab_uart_rx, (void**)&rx_buf_ptr, K_NO_WAIT) == 0) {
 				ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
@@ -205,3 +217,31 @@ int app_uart_rx_free(void)
 
 	return 0;
 }
+
+void uart_event_thread_func(void)
+{
+	static struct uart_msg_queue_item new_event;
+	while(1) {
+		// Wait for a new event to be available in the event queue
+		k_msgq_get(&uart_rx_msgq, &new_event, K_FOREVER);
+
+		// In case of an RX event we need to handle freeing of the RX buffers (memslab_uart_rx)
+		if(new_event.type == APP_UART_EVT_RX) {
+			last_read_buffer = new_event.data.rx._source_buf;
+			app_uart_event_handler(&new_event);
+			app_uart_rx_free();
+		// All other events are simply forwarded to the event handler
+		} else {
+			app_uart_event_handler(&new_event);
+		}
+		
+		// Check if the event queue was overflowed during the processing of the previous event
+		if(uart_event_queue_overflow) {
+			uart_event_queue_overflow = false;
+			new_event.type = APP_UART_EVT_QUEUE_OVERFLOW;
+			app_uart_event_handler(&new_event);
+		}
+	}
+}
+
+K_THREAD_DEFINE(app_uart_evt_thread, UART_EVENT_THREAD_STACK_SIZE, uart_event_thread_func, 0, 0, 0, UART_EVENT_THREAD_PRIORITY, 0, 100);

@@ -17,31 +17,39 @@ static uint8_t test_buf[TEST_LENGTH];
 
 static volatile bool start_sleep_period = false;
 
+static void on_app_uart_event(struct uart_msg_queue_item *evt)
+{
+	switch(evt->type) {
+		case APP_UART_EVT_RX:
+			printk("RX ");
+			for(int i = 0; i < evt->data.rx.length; i++) printk("%.i ", evt->data.rx.bytes[i]);
+			printk("\n");
+			break;
+
+		case APP_UART_EVT_ERROR:
+			printk("UART error: Reason %i\n", evt->data.error.reason);
+			break;
+
+		case APP_UART_EVT_QUEUE_OVERFLOW:
+			printk("UART error: Event queue overflow!\n");
+			break;
+	}
+}
+
 void main(void)
 {
 	printk("UART Async example started\n");
 	
-	app_uart_init();
-
-	int counter = 0;
+	app_uart_init(on_app_uart_event);
 
 	while (1) {
-		uint8_t *uart_rx_data;
-		uint32_t uart_rx_length;
-		if(app_uart_rx(&uart_rx_data, &uart_rx_length, K_MSEC(100)) == 0) {
-			// Process the message here.
-			printk("RX %.8x ", (uint32_t)uart_rx_data);
-			for(int i = 0; i < uart_rx_length; i++) printk("%.i ", uart_rx_data[i]);
-			printk("\n");
-			app_uart_rx_free();
-			//k_msleep(100);
-		} 
-		if(start_sleep_period) {
+		/*if(start_sleep_period) {
 			start_sleep_period = false;
 			printk("Sleep start\n");
 			k_msleep(8000);
 			printk("Sleep end\n");
-		}
+		}*/
+		k_msleep(1000);
 	}
 }
 
