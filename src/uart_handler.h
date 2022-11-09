@@ -32,7 +32,7 @@ struct uart_msg_queue_item {
 
 typedef void (*app_uart_event_handler_t)(struct uart_msg_queue_item *evt);
 
-void app_uart_init(app_uart_event_handler_t evt_handler);
+int app_uart_init(app_uart_event_handler_t evt_handler);
 
 int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeout);
 
