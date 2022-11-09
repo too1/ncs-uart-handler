@@ -17,7 +17,7 @@ static uint8_t test_buf[TEST_LENGTH];
 
 static volatile bool start_sleep_period = false;
 
-static void on_app_uart_event(struct uart_msg_queue_item *evt)
+static void on_app_uart_event(struct app_uart_evt_t *evt)
 {
 	switch(evt->type) {
 		case APP_UART_EVT_RX:

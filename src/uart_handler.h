@@ -16,7 +16,7 @@
 
 enum app_uart_evt_types_t {APP_UART_EVT_RX, APP_UART_EVT_ERROR, APP_UART_EVT_QUEUE_OVERFLOW};
 
-struct uart_msg_queue_item {
+struct app_uart_evt_t {
 	enum app_uart_evt_types_t type;
 	union {
 		struct {
@@ -30,14 +30,10 @@ struct uart_msg_queue_item {
 	} data;
 };
 
-typedef void (*app_uart_event_handler_t)(struct uart_msg_queue_item *evt);
+typedef void (*app_uart_event_handler_t)(struct app_uart_evt_t *evt);
 
 int app_uart_init(app_uart_event_handler_t evt_handler);
 
 int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeout);
-
-int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout);
-
-int app_uart_rx_free(void);
 
 #endif

@@ -18,7 +18,7 @@ volatile int bytes_claimed;
 K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 
 // UART RX message queue
-K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEUE_SIZE, 4);
+K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct app_uart_evt_t), UART_RX_MSG_QUEUE_SIZE, 4);
 volatile int allocated_slabs = 0;
 static bool uart_event_queue_overflow = false;
 
@@ -43,7 +43,7 @@ static int uart_tx_get_from_queue(void)
 	return bytes_claimed;
 }
 
-static inline void uart_push_event(struct uart_msg_queue_item *event)
+static inline void uart_push_event(struct app_uart_evt_t *event)
 {
 	if(k_msgq_put(&uart_evt_queue, event, K_NO_WAIT) != 0){
 		LOG_ERR("Error: Uart event queue full!");
@@ -54,7 +54,7 @@ static inline void uart_push_event(struct uart_msg_queue_item *event)
 void app_uart_async_callback(const struct device *uart_dev,
 							 struct uart_event *evt, void *user_data)
 {
-	static struct uart_msg_queue_item new_message;
+	static struct app_uart_evt_t new_message;
 	static char *new_rx_buf;
 	int ret;
 
@@ -178,24 +178,8 @@ int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeo
 }
 
 char *last_read_buffer = 0;
-int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
-{
-	int ret;
-	static struct uart_msg_queue_item incoming_message;
-
-	// Check for a new message in the buffer
-	ret = k_msgq_get(&uart_evt_queue, &incoming_message, timeout);
-	if(ret != 0) return ret;
-
-	*data_ptr = incoming_message.data.rx.bytes;
-	*data_len = incoming_message.data.rx.length;
-	last_read_buffer = incoming_message.data.rx._source_buf;
-
-	return 0;
-}
-
 char *last_freed_buffer = 0;
-int app_uart_rx_free(void)
+static int app_uart_rx_free(void)
 {
 	int ret;
 
@@ -226,7 +210,7 @@ int app_uart_rx_free(void)
 
 void uart_event_thread_func(void)
 {
-	static struct uart_msg_queue_item new_event;
+	static struct app_uart_evt_t new_event;
 	while(1) {
 		// Wait for a new event to be available in the event queue
 		k_msgq_get(&uart_evt_queue, &new_event, K_FOREVER);
