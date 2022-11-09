@@ -2,6 +2,11 @@
 #include <sys/ring_buffer.h>
 #include <string.h>
 
+#include <zephyr/logging/log.h>
+
+#define LOG_MODULE_NAME app_uart
+LOG_MODULE_REGISTER(LOG_MODULE_NAME);
+
 K_SEM_DEFINE(tx_done, 1, 1);
 
 // UART TX fifo
@@ -41,7 +46,7 @@ static int uart_tx_get_from_queue(void)
 static inline void uart_push_event(struct uart_msg_queue_item *event)
 {
 	if(k_msgq_put(&uart_evt_queue, event, K_NO_WAIT) != 0){
-		printk("Error: Uart event queue full!\n");
+		LOG_ERR("Error: Uart event queue full!");
 		uart_event_queue_overflow = true;
 	}
 }
@@ -66,7 +71,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 			break;
 		
 		case UART_RX_RDY:
-			//printk("rdy (%i)\n", evt->data.rx.len);
+			LOG_DBG("rdy (%i)", evt->data.rx.len);
 			rx_received_since_enable = true;
 			new_message.type = APP_UART_EVT_RX;
 			new_message.data.rx.bytes = evt->data.rx.buf + evt->data.rx.offset;
@@ -78,7 +83,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 		case UART_RX_BUF_REQUEST:
 			if(k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT) == 0) {
 				allocated_slabs++;
-				//printk("Alloc (%i)\n", allocated_slabs);
+				LOG_DBG("Alloc (%i)", allocated_slabs);
 				uart_rx_buf_rsp(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE);
 			}
 			break;
@@ -93,18 +98,16 @@ void app_uart_async_callback(const struct device *uart_dev,
 			break;
 
 		case UART_RX_DISABLED:
-			//printk("dis\n");
 			if((ret = k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT)) == 0) {
-				//uart_rx_buf_rsp(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE);
 				allocated_slabs++;
-				//printk("RX DIS. Re-enabling (%i)\n", allocated_slabs);
+				LOG_DBG("RX DIS. Re-enabling (%i)", allocated_slabs);
 				int ret = uart_rx_enable(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
 				if(ret) {
 					printk("UART rx enable error in disable callback: %d\n", ret);
 					return;
 				}
 			} else {
-				//printk("RX dis, buf full. Set flag %i\n", ret);
+				LOG_DBG("RX dis, buf full. Set flag %i", ret);
 				rx_enable_request = true;
 			}
 			rx_received_since_enable = false;
@@ -118,10 +121,10 @@ void app_uart_async_callback(const struct device *uart_dev,
 int app_uart_init(app_uart_event_handler_t evt_handler)
 {
 	int ret;
-	
+
 	dev_uart = DEVICE_DT_GET(DT_NODELABEL(my_uart));
 	if(!device_is_ready(dev_uart)) {
-		printk("UART device not ready!\n");
+		LOG_ERR("UART device not ready!");
 		return -ENODEV;
 	}
 
@@ -129,7 +132,7 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 
 	ret = uart_callback_set(dev_uart, app_uart_async_callback, NULL);
 	if(ret) {
-		printk("Uart callback set error: %d\n", ret);
+		LOG_ERR("Uart callback set error: %d", ret);
 		return ret;
 	}
 
@@ -138,11 +141,11 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 		allocated_slabs++;
 		ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
 		if(ret) {
-			printk("UART rx enable error: %d\n", ret);
+			LOG_ERR("UART rx enable error: %d", ret);
 			return ret;
 		}
 	}
-
+	LOG_INF("INITIALIZED");
 	return 0;
 }
 
@@ -204,16 +207,16 @@ int app_uart_rx_free(void)
 
 		if(rx_enable_request) {
 			rx_enable_request = false;
-			//printk("Buffers freed. Re-en RX\n");
+			LOG_DBG("Buffers freed. Re-en RX");
 			char *rx_buf_ptr;
 			if (k_mem_slab_alloc(&memslab_uart_rx, (void**)&rx_buf_ptr, K_NO_WAIT) == 0) {
 				ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
 				if(ret) {
-					printk("UART rx enable error: %d\n", ret);
+					LOG_ERR("UART rx enable error: %d", ret);
 					return -1;
 				}
 				allocated_slabs++;
-			} else printk("Memslab alloc failed!!!\n");
+			} else LOG_ERR("Memslab alloc failed!");
 		}
 	}
 	last_freed_buffer = last_read_buffer;
