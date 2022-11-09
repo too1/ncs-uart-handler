@@ -13,7 +13,7 @@ volatile int bytes_claimed;
 K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 
 // UART RX message queue
-K_MSGQ_DEFINE(uart_rx_msgq, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEUE_SIZE, 4);
+K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct uart_msg_queue_item), UART_RX_MSG_QUEUE_SIZE, 4);
 volatile int allocated_slabs = 0;
 static bool uart_event_queue_overflow = false;
 
@@ -40,7 +40,7 @@ static int uart_tx_get_from_queue(void)
 
 static inline void uart_push_event(struct uart_msg_queue_item *event)
 {
-	if(k_msgq_put(&uart_rx_msgq, event, K_NO_WAIT) != 0){
+	if(k_msgq_put(&uart_evt_queue, event, K_NO_WAIT) != 0){
 		printk("Error: Uart event queue full!\n");
 		uart_event_queue_overflow = true;
 	}
@@ -178,7 +178,7 @@ int app_uart_rx(uint8_t ** data_ptr, uint32_t * data_len, k_timeout_t timeout)
 	static struct uart_msg_queue_item incoming_message;
 
 	// Check for a new message in the buffer
-	ret = k_msgq_get(&uart_rx_msgq, &incoming_message, timeout);
+	ret = k_msgq_get(&uart_evt_queue, &incoming_message, timeout);
 	if(ret != 0) return ret;
 
 	*data_ptr = incoming_message.data.rx.bytes;
@@ -223,7 +223,7 @@ void uart_event_thread_func(void)
 	static struct uart_msg_queue_item new_event;
 	while(1) {
 		// Wait for a new event to be available in the event queue
-		k_msgq_get(&uart_rx_msgq, &new_event, K_FOREVER);
+		k_msgq_get(&uart_evt_queue, &new_event, K_FOREVER);
 
 		// In case of an RX event we need to handle freeing of the RX buffers (memslab_uart_rx)
 		if(new_event.type == APP_UART_EVT_RX) {
