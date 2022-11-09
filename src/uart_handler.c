@@ -18,7 +18,7 @@ volatile int bytes_claimed;
 K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 
 // UART RX message queue
-K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct app_uart_evt_t), UART_RX_MSG_QUEUE_SIZE, 4);
+K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct app_uart_evt_t), UART_EVENT_QUEUE_SIZE, 4);
 volatile int allocated_slabs = 0;
 static bool uart_event_queue_overflow = false;
 
