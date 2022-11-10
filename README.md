@@ -1,7 +1,4 @@
-.. _uart-count-rx:
-
-NCS-uart-handler
-################
+**NCS-uart-handler**
 
 Overview
 ********
@@ -27,29 +24,36 @@ To enable the module, add the following line to the project configuration (prj.c
 Optionally, the following Kconfig parameters can be changed:
 
 *CONFIG_APP_UART_HW_INDEX (default 0)*
+
 	The index of the UART hardware peripheral. Set to 0 for uart0, 1 for uart1 etc. 
 	Make sure the uart in question is enabled in your device tree. 
 
 *CONFIG_APP_UART_RX_TIMEOUT_US (default 100000)*
+
 	Set the period of inactivity after which any data in the RX buffers will be forwarded to the application. 
 	A smaller value will typically lead to more overhead on the processing side, but will ensure quicker response to incoming UART data. 
 	Once the current UART buffer fills up the data will be forwarded to the application regardless of the timeout value. 
 
 *CONFIG_APP_UART_TX_BUF_SIZE (default 256)*
+
 	Size of the TX buffer. Set this to 0 to disable TX buffering.
 		
 *CONFIG_APP_UART_RX_BUF_SIZE (default 256)*
+
 	Size of the RX buffer. The actual UART DMA buffer will be at most half the size of the RX buffer. 
 
 *CONFIG_APP_UART_EVT_QUEUE_SIZE (default 32)*
+
 	Size of the event queue, used to store events such as RX data received or error messages. 
 	When using a large RX buffer or a fast RX timeout the event queue might be filled by many small RX messages, and in this case a larger event queue might be necessary. 
 	If the event queue overflows an event will be forwarded to the application. 
 
 *CONFIG_APP_UART_EVT_THREAD_STACK_SIZE (default 1024)*
+
 	Stack size of the event handler thread, used to run the application event handler. 
 
 *CONFIG_APP_UART_EVT_THREAD_PRIORITY (default 5)*
+
 	The priority of the event handler thread
 
 
