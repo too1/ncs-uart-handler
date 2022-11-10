@@ -61,7 +61,7 @@ static void on_app_uart_event(struct app_uart_evt_t *evt)
 {
 	switch(evt->type) {
 		case APP_UART_EVT_RX:
-      // Print the incoming data to the console
+			// Print the incoming data to the console
 			printk("RX ");
 			for(int i = 0; i < evt->data.rx.length; i++) printk("%.2x ", evt->data.rx.bytes[i]);
 			printk("\n");
@@ -84,7 +84,7 @@ static void on_app_uart_event(struct app_uart_evt_t *evt)
 To initialize the library call the init function, and provide a pointer to your event handler:
 
 ```c
-err = app_uart_init(on_app_uart_event);
+int err = app_uart_init(on_app_uart_event);
 if(err != 0) {
 	printk("app_uart_init failed: %i\n", err);
 }
@@ -93,7 +93,7 @@ if(err != 0) {
 To send UART data use the app_uart_send(..) function. A timeout parameter can be provided to time out after a predetermined point in time. 
 
 ```c
-uint8_t my_data[] = {1,2,3,4,5};
+static uint8_t my_data[] = {1,2,3,4,5};
 app_uart_send(my_data, sizeof(my_data), K_FOREVER);
 ```
 
