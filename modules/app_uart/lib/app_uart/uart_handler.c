@@ -7,6 +7,8 @@
 #define LOG_MODULE_NAME app_uart
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
+#define UART_INSTANCE CONCAT(uart, CONFIG_APP_UART_HW_INDEX)
+
 K_SEM_DEFINE(tx_done, 1, 1);
 
 // UART TX fifo
@@ -122,7 +124,7 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 {
 	int ret;
 
-	dev_uart = DEVICE_DT_GET(DT_NODELABEL(my_uart));
+	dev_uart = DEVICE_DT_GET(DT_NODELABEL(UART_INSTANCE));
 	if(!device_is_ready(dev_uart)) {
 		LOG_ERR("UART device not ready!");
 		return -ENODEV;
@@ -236,4 +238,3 @@ void uart_event_thread_func(void)
 
 K_THREAD_DEFINE(app_uart_evt_thread, CONFIG_APP_UART_EVT_THREAD_STACK_SIZE, uart_event_thread_func, \
 				0, 0, 0, CONFIG_APP_UART_EVT_THREAD_PRIORITY, 0, 100);
-				

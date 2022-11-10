@@ -14,6 +14,13 @@ menuconfig APP_UART
 		
 if APP_UART
 
+config APP_UART_HW_INDEX
+	int "UART peripheral index"
+	default 0
+	help
+	  The index of the UART hardware peripheral. Set to 0 for uart0, 1 for uart1 etc. 
+	  Make sure the uart in question is enabled in your device tree. 
+
 config APP_UART_RX_TIMEOUT_US
 	int "RX timeout"
 	default 100000
