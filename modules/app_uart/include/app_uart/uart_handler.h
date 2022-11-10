@@ -5,15 +5,6 @@
 #include <device.h>
 #include <drivers/uart.h>
 
-#define UART_RX_TIMEOUT_US	100000
-
-#define UART_TX_BUF_SIZE  				256
-#define UART_RX_BUF_SIZE				256
-
-#define UART_EVENT_QUEUE_SIZE			32
-#define UART_EVENT_THREAD_STACK_SIZE 	1024
-#define UART_EVENT_THREAD_PRIORITY		5
-
 enum app_uart_evt_types_t {APP_UART_EVT_RX, APP_UART_EVT_ERROR, APP_UART_EVT_QUEUE_OVERFLOW};
 
 struct app_uart_evt_t {

@@ -10,15 +10,15 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 K_SEM_DEFINE(tx_done, 1, 1);
 
 // UART TX fifo
-RING_BUF_DECLARE(app_tx_fifo, UART_TX_BUF_SIZE);
+RING_BUF_DECLARE(app_tx_fifo, CONFIG_APP_UART_TX_BUF_SIZE);
 volatile int bytes_claimed;
 
 // UART RX primary buffers
-#define UART_RX_SLAB_SIZE (UART_RX_BUF_SIZE / 4)
+#define UART_RX_SLAB_SIZE (CONFIG_APP_UART_RX_BUF_SIZE / 4)
 K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 
 // UART RX message queue
-K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct app_uart_evt_t), UART_EVENT_QUEUE_SIZE, 4);
+K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct app_uart_evt_t), CONFIG_APP_UART_EVT_QUEUE_SIZE, 4);
 volatile int allocated_slabs = 0;
 static bool uart_event_queue_overflow = false;
 
@@ -34,7 +34,7 @@ static int uart_tx_get_from_queue(void)
 {
 	uint8_t *data_ptr;
 	// Try to claim any available bytes in the FIFO
-	bytes_claimed = ring_buf_get_claim(&app_tx_fifo, &data_ptr, UART_TX_BUF_SIZE);
+	bytes_claimed = ring_buf_get_claim(&app_tx_fifo, &data_ptr, CONFIG_APP_UART_TX_BUF_SIZE);
 
 	if(bytes_claimed > 0) {
 		// Start a UART transmission based on the number of available bytes
@@ -101,7 +101,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 			if((ret = k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT)) == 0) {
 				allocated_slabs++;
 				LOG_DBG("RX DIS. Re-enabling (%i)", allocated_slabs);
-				int ret = uart_rx_enable(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
+				int ret = uart_rx_enable(dev_uart, new_rx_buf, UART_RX_SLAB_SIZE, CONFIG_APP_UART_RX_TIMEOUT_US);
 				if(ret) {
 					printk("UART rx enable error in disable callback: %d\n", ret);
 					return;
@@ -139,7 +139,7 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 	char *rx_buf_ptr;
 	if (k_mem_slab_alloc(&memslab_uart_rx, (void**)&rx_buf_ptr, K_NO_WAIT) == 0) {
 		allocated_slabs++;
-		ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
+		ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, CONFIG_APP_UART_RX_TIMEOUT_US);
 		if(ret) {
 			LOG_ERR("UART rx enable error: %d", ret);
 			return ret;
@@ -194,7 +194,7 @@ static int app_uart_rx_free(void)
 			LOG_DBG("Buffers freed. Re-en RX");
 			char *rx_buf_ptr;
 			if (k_mem_slab_alloc(&memslab_uart_rx, (void**)&rx_buf_ptr, K_NO_WAIT) == 0) {
-				ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, UART_RX_TIMEOUT_US);
+				ret = uart_rx_enable(dev_uart, rx_buf_ptr, UART_RX_SLAB_SIZE, CONFIG_APP_UART_RX_TIMEOUT_US);
 				if(ret) {
 					LOG_ERR("UART rx enable error: %d", ret);
 					return -1;
@@ -234,4 +234,6 @@ void uart_event_thread_func(void)
 	}
 }
 
-K_THREAD_DEFINE(app_uart_evt_thread, UART_EVENT_THREAD_STACK_SIZE, uart_event_thread_func, 0, 0, 0, UART_EVENT_THREAD_PRIORITY, 0, 100);
+K_THREAD_DEFINE(app_uart_evt_thread, CONFIG_APP_UART_EVT_THREAD_STACK_SIZE, uart_event_thread_func, \
+				0, 0, 0, CONFIG_APP_UART_EVT_THREAD_PRIORITY, 0, 100);
+				
