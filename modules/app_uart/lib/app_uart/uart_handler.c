@@ -156,11 +156,7 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeout)
 {
 	uint32_t written_to_buf;
-	if(k_sem_take(&tx_done, K_FOREVER) == 0) {
-		uart_tx(dev_uart, data_ptr, data_len, SYS_FOREVER_MS);
-		return 0;	
-	}
-	return -1;
+
 	// In case the UART TX is idle, start transmission immediately without buffering
 	if(k_sem_take(&tx_done, K_NO_WAIT) == 0) {
 		// Start a UART transmission
@@ -177,7 +173,8 @@ int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeo
 	
 	data_ptr += written_to_buf;
 
-	// If we reach here it means some bytes still haven't been written to the UART. Wait for the tx_done semaphore using the provided timeout.
+	// If we reach here it means some bytes still haven't been written to the UART. 
+	// Wait for the tx_done semaphore using the provided timeout.
 	if(k_sem_take(&tx_done, timeout) == 0) {
 		// Start a UART transmission
 		uart_tx(dev_uart, data_ptr, data_len, SYS_FOREVER_MS);
@@ -185,7 +182,7 @@ int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeo
 	}
 
 	// Time out
-	return -1;
+	return -EAGAIN;
 }
 
 char *last_read_buffer = 0;
