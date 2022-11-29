@@ -13,7 +13,7 @@ K_SEM_DEFINE(tx_done, 1, 1);
 
 // UART TX fifo
 RING_BUF_DECLARE(app_tx_fifo, CONFIG_APP_UART_TX_BUF_SIZE);
-volatile int bytes_claimed;
+volatile int bytes_claimed = 0;
 
 // UART RX primary buffers
 #define UART_RX_SLAB_SIZE (CONFIG_APP_UART_RX_BUF_SIZE / 4)
@@ -155,28 +155,37 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 // WARNING: This function is not thread safe! If you want to call this function from multiple threads a semaphore should be used
 int app_uart_send(const uint8_t * data_ptr, uint32_t data_len, k_timeout_t timeout)
 {
-	while(1) {
-		// Try to move the data into the TX ring buffer
-		uint32_t written_to_buf = ring_buf_put(&app_tx_fifo, data_ptr, data_len);
+	uint32_t written_to_buf;
+	if(k_sem_take(&tx_done, K_FOREVER) == 0) {
+		uart_tx(dev_uart, data_ptr, data_len, SYS_FOREVER_MS);
+		return 0;	
+	}
+	return -1;
+	// In case the UART TX is idle, start transmission immediately without buffering
+	if(k_sem_take(&tx_done, K_NO_WAIT) == 0) {
+		// Start a UART transmission
+		uart_tx(dev_uart, data_ptr, data_len, SYS_FOREVER_MS);
+		return 0;
+	} else {
+		// In case the UART is currently busy, try to move the data into the TX ring buffer instead
+		written_to_buf = ring_buf_put(&app_tx_fifo, data_ptr, data_len);
 		data_len -= written_to_buf;
-		
-		// In case the UART TX is idle, start transmission
-		if(k_sem_take(&tx_done, K_NO_WAIT) == 0) {
-			uart_tx_get_from_queue();
-		}	
-		
-		// In case all the data was written, exit the loop
-		if(data_len == 0) break;
 
-		// If timeout if 0, exit immediately
-		if(timeout.ticks == 0) break;
+		// In case all the data was written, exit the function
+		if(data_len == 0) return 0;
+	}
+	
+	data_ptr += written_to_buf;
 
-		// In case some data is still to be written, sleep for some time and run the loop one more time
-		k_msleep(10);
-		data_ptr += written_to_buf;
+	// If we reach here it means some bytes still haven't been written to the UART. Wait for the tx_done semaphore using the provided timeout.
+	if(k_sem_take(&tx_done, timeout) == 0) {
+		// Start a UART transmission
+		uart_tx(dev_uart, data_ptr, data_len, SYS_FOREVER_MS);
+		return 0;
 	}
 
-	return 0;
+	// Time out
+	return -1;
 }
 
 char *last_read_buffer = 0;
