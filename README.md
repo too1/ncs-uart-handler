@@ -21,12 +21,17 @@ To enable the module, add the following line to the project configuration (prj.c
 
 *CONFIG_APP_UART=y*
 
+To select which UART should be used by the app_uart library, it is necessary to add a chosen node to your device tree, assigning your UART of choice to the nordic,app-uart property. As an example, in order to use UART1 for app_uart, add the following lines to your device tree overlay:
+
+```c
+/ {
+	chosen {
+		nordic,app-uart = &uart1;
+	};
+};
+```
+
 Optionally, the following Kconfig parameters can be changed:
-
-*CONFIG_APP_UART_HW_INDEX (default 0)*
-
-	The index of the UART hardware peripheral. Set to 0 for uart0, 1 for uart1 etc. 
-	Make sure the uart in question is enabled in your device tree. 
 
 *CONFIG_APP_UART_RX_TIMEOUT_US (default 100000)*
 
