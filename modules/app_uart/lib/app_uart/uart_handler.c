@@ -124,7 +124,7 @@ int app_uart_init(app_uart_event_handler_t evt_handler)
 {
 	int ret;
 
-	dev_uart = DEVICE_DT_GET(DT_NODELABEL(UART_INSTANCE));
+	dev_uart = DEVICE_DT_GET(DT_CHOSEN(nordic_app_uart));
 	if(!device_is_ready(dev_uart)) {
 		LOG_ERR("UART device not ready!");
 		return -ENODEV;
