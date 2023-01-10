@@ -1,21 +1,16 @@
 /*
- * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2023 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include <zephyr/sys/ring_buffer.h>
-#include <zephyr/drivers/gpio.h>
-#include <uart_handler.h>
 #include <string.h>
+#include <uart_handler.h>
 
-#define TEST_LENGTH 10
-static uint8_t test_buf[TEST_LENGTH];
+#define SLEEP_TIME_MS 4000
 
-static volatile bool start_sleep_period = false;
+static uint8_t test_buf_tx[] = "Hello world from the app_uart driver!!\r\n";
 
 static void on_app_uart_event(struct app_uart_evt_t *evt)
 {
@@ -24,9 +19,7 @@ static void on_app_uart_event(struct app_uart_evt_t *evt)
 		// NOTE: The UART data buffers are only guaranteed to be retained until this function ends
 		//       If the data can not be processed immediately, they should be copied to a different buffer
 		case APP_UART_EVT_RX:
-			printk("RX ");
-			for(int i = 0; i < evt->data.rx.length; i++) printk("%.i ", evt->data.rx.bytes[i]);
-			printk("\n");
+			printk("RX (%i bytes): %.*s\n", evt->data.rx.length, evt->data.rx.length, evt->data.rx.bytes); 
 			break;
 
 		// A UART error ocurred, such as a break or frame error condition
@@ -54,11 +47,8 @@ void main(void)
 		return;
 	}
 
-	int sleep_time = 250;
-	static uint8_t cnt = 0;
 	while(1) {
-		for(int i = 0; i < TEST_LENGTH; i++) test_buf[i] = cnt++;
-		app_uart_send(test_buf, TEST_LENGTH, K_NO_WAIT);
-		k_msleep(sleep_time);
+		app_uart_send(test_buf_tx, strlen(test_buf_tx), K_NO_WAIT);
+		k_msleep(SLEEP_TIME_MS);
 	}
 }

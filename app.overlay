@@ -1,5 +1,0 @@
-/ {
-	chosen {
-		nordic,app-uart = &uart1;
-	};
-};
