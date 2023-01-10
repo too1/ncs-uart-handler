@@ -1,5 +1,5 @@
 #include <uart_handler.h>
-#include <sys/ring_buffer.h>
+#include <zephyr/sys/ring_buffer.h>
 #include <string.h>
 
 #include <zephyr/logging/log.h>
