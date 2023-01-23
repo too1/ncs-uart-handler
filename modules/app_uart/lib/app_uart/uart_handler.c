@@ -22,11 +22,14 @@ K_MEM_SLAB_DEFINE(memslab_uart_rx, UART_RX_SLAB_SIZE, 4, 4);
 // UART RX message queue
 K_MSGQ_DEFINE(uart_evt_queue, sizeof(struct app_uart_evt_t), CONFIG_APP_UART_EVT_QUEUE_SIZE, 4);
 volatile int allocated_slabs = 0;
+volatile int rx_bytes_in_buffers = 0;
 static bool uart_event_queue_overflow = false;
 
 // UART RX free bytes
 static bool rx_enable_request = false;
 static bool rx_received_since_enable = false;
+
+static uint32_t error_flags = 0;
 
 static app_uart_event_handler_t app_uart_event_handler;
 
@@ -80,6 +83,7 @@ void app_uart_async_callback(const struct device *uart_dev,
 			new_message.data.rx.length = evt->data.rx.len;
 			new_message.data.rx._source_buf = evt->data.rx.buf;
 			uart_push_event(&new_message);
+			rx_bytes_in_buffers += evt->data.rx.len;
 			break;
 		
 		case UART_RX_BUF_REQUEST:
@@ -95,11 +99,20 @@ void app_uart_async_callback(const struct device *uart_dev,
 
 		case UART_RX_STOPPED:
 			new_message.type = APP_UART_EVT_ERROR;
-			new_message.data.error.reason = evt->data.rx_stop.reason;
-			uart_push_event(&new_message);
+			if(error_flags == 0) {
+				error_flags = evt->data.rx_stop.reason;
+				//new_message.data.error.reason = evt->data.rx_stop.reason;
+				uart_push_event(&new_message);			
+			} else {
+				error_flags |= evt->data.rx_stop.reason;
+			}
 			break;
 
 		case UART_RX_DISABLED:
+			if(rx_bytes_in_buffers == 0) {
+				k_mem_slab_init(&memslab_uart_rx, _k_mem_slab_buf_memslab_uart_rx, UART_RX_SLAB_SIZE, 4);
+				allocated_slabs = 0;
+			}	
 			if((ret = k_mem_slab_alloc(&memslab_uart_rx, (void**)&new_rx_buf, K_NO_WAIT)) == 0) {
 				allocated_slabs++;
 				LOG_DBG("RX DIS. Re-enabling (%i)", allocated_slabs);
@@ -227,7 +240,13 @@ void uart_event_thread_func(void)
 		if(new_event.type == APP_UART_EVT_RX) {
 			last_read_buffer = new_event.data.rx._source_buf;
 			app_uart_event_handler(&new_event);
+			rx_bytes_in_buffers -= new_event.data.rx.length;
 			app_uart_rx_free();
+		} else if(new_event.type == APP_UART_EVT_ERROR) {
+			uint32_t evt_error_flags = error_flags;
+			error_flags = 0;
+			new_event.data.error.reason = evt_error_flags;
+			app_uart_event_handler(&new_event);
 		// All other events are simply forwarded to the event handler
 		} else {
 			app_uart_event_handler(&new_event);
