@@ -6,6 +6,6 @@
 
 / {
 	chosen {
-		nordic,nus-uart = &uart0;
+		nordic,app-uart = &uart0;
 	};
 };
