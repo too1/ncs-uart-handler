@@ -98,7 +98,7 @@ void dk_btn_handler(uint32_t button_state, uint32_t has_changed)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -109,7 +109,7 @@ void main(void)
 	err = app_uart_init(on_app_uart_event);
 	if(err != 0) {
 		printk("app_uart_init failed: %i\n", err);
-		return;
+		return 0;
 	}
 
 	for(int i = 0; i < TX_BUF_SIZE; i++) {
@@ -123,4 +123,6 @@ void main(void)
 			app_uart_rx_buf_cnt = 0;
 		}
 	}
+
+	return 0;
 }

@@ -35,7 +35,7 @@ static void on_app_uart_event(struct app_uart_evt_t *evt)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -44,11 +44,13 @@ void main(void)
 	err = app_uart_init(on_app_uart_event);
 	if(err != 0) {
 		printk("app_uart_init failed: %i\n", err);
-		return;
+		return 0;
 	}
 
 	while(1) {
 		app_uart_send(test_buf_tx, strlen(test_buf_tx), K_NO_WAIT);
 		k_msleep(SLEEP_TIME_MS);
 	}
+
+	return 0;
 }

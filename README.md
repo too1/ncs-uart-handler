@@ -5,6 +5,10 @@ Overview
 This example implements a UART async library that simplifies the interaction with the UART in async mode. 
 The library handles the buffering of TX and RX data without relying on dynamic memory allocation, and with a minimal use of memcpy. 
 
+Requirements
+************
+- nRF Connect SDK v2.6.0
+
 Usage
 *****
 
